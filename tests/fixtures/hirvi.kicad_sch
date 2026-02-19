@@ -7,9 +7,6 @@
 	(title_block
 		(title "Hirvi")
 		(rev "v1")
-		(comment 1 "Ostoskori 3: https://www.triopak.fi/k/7ec353aa")
-		(comment 2 "Ostoskori 2: https://www.triopak.fi/k/7bb8fa3c")
-		(comment 3 "Ostoskori 1: https://www.triopak.fi/k/126d39cf")
 	)
 	(lib_symbols
 		(symbol "4xxx:40106"
@@ -14973,46 +14970,46 @@
 			)
 		)
 		(pin "6"
-			(uuid "7eb1c3ef-ac09-4a0f-aa22-e302272f7b19")
+			(uuid "7eb1c3ef-ac09-4a0f-aa22-e302272f7b1a")
 		)
 		(pin "13"
-			(uuid "0249b4d5-2952-4436-91dd-c7e74d815dac")
+			(uuid "0249b4d5-2952-4436-91dd-c7e74d815dad")
 		)
 		(pin "12"
-			(uuid "287cabc1-0c28-470d-bb92-bee06b06e3e3")
+			(uuid "287cabc1-0c28-470d-bb92-bee06b06e3e4")
 		)
 		(pin "14"
-			(uuid "133f214a-ff05-47ea-b2e3-bdc207a95281")
+			(uuid "133f214a-ff05-47ea-b2e3-bdc207a95282")
 		)
 		(pin "7"
-			(uuid "db505ecf-01ed-4554-b14f-2beef739f632")
+			(uuid "db505ecf-01ed-4554-b14f-2beef739f633")
 		)
 		(pin "5"
-			(uuid "ff361b13-27bd-47b2-9d64-0e3bafe2d1af")
+			(uuid "ff361b13-27bd-47b2-9d64-0e3bafe2d1b0")
 		)
 		(pin "1"
-			(uuid "57cd486a-1dd3-4a8a-9fdc-9f44ae62e993")
+			(uuid "57cd486a-1dd3-4a8a-9fdc-9f44ae62e994")
 		)
 		(pin "9"
-			(uuid "b6513cd2-7b34-4fb8-ac78-3939e086a87a")
+			(uuid "b6513cd2-7b34-4fb8-ac78-3939e086a87b")
 		)
 		(pin "8"
-			(uuid "97b971cc-1911-4f4f-9fc5-e41df33d6a80")
+			(uuid "97b971cc-1911-4f4f-9fc5-e41df33d6a81")
 		)
 		(pin "11"
-			(uuid "0c488935-7f53-4881-b17d-deaa929e7afe")
+			(uuid "0c488935-7f53-4881-b17d-deaa929e7aff")
 		)
 		(pin "10"
-			(uuid "ab868860-af81-4622-a0ce-a85f15f33902")
+			(uuid "ab868860-af81-4622-a0ce-a85f15f33903")
 		)
 		(pin "4"
-			(uuid "d09c22da-780a-4826-b903-fdd37e2ba22d")
+			(uuid "d09c22da-780a-4826-b903-fdd37e2ba22e")
 		)
 		(pin "3"
-			(uuid "f70c4927-668c-427c-a8ff-0790e054875a")
+			(uuid "f70c4927-668c-427c-a8ff-0790e054875b")
 		)
 		(pin "2"
-			(uuid "a2e6839d-31c3-448b-b178-259fafc97b8a")
+			(uuid "a2e6839d-31c3-448b-b178-259fafc97b8b")
 		)
 		(instances
 			(project ""

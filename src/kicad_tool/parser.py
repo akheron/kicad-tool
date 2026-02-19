@@ -237,6 +237,24 @@ def _coord_key(x: float, y: float) -> tuple[float, float]:
     return (round(x, 2), round(y, 2))
 
 
+def _point_on_wire(
+    point: tuple[float, float],
+    wire_start: tuple[float, float],
+    wire_end: tuple[float, float],
+    tol: float = 0.05,
+) -> bool:
+    px, py = point
+    sx, sy = wire_start
+    ex, ey = wire_end
+    if abs(sy - ey) < tol and abs(py - sy) < tol:
+        if min(sx, ex) - tol < px < max(sx, ex) + tol:
+            return True
+    if abs(sx - ex) < tol and abs(px - sx) < tol:
+        if min(sy, ey) - tol < py < max(sy, ey) + tol:
+            return True
+    return False
+
+
 def _pin_location(sym, lib_pin) -> tuple[float, float]:
     sx, sy = sym.at.value[0], sym.at.value[1]
     sym_rot = sym.at.value[2] if len(sym.at.value) > 2 else 0
@@ -345,10 +363,12 @@ def _extract_nets(
             resolved = pin_names.get((comp_ref, pin_number), pin_number)
             pin_at_coord.setdefault(coord, []).append((comp_ref, resolved))
 
+    wire_segments = []
     for wire in sch.wire:
         start = _coord_key(wire.start.value[0], wire.start.value[1])
         end = _coord_key(wire.end.value[0], wire.end.value[1])
         uf.union(start, end)
+        wire_segments.append((start, end))
 
     for junc in sch.junction:
         coord = _coord_key(junc.at.value[0], junc.at.value[1])
@@ -363,6 +383,12 @@ def _extract_nets(
         coord = _coord_key(glabel.at.value[0], glabel.at.value[1])
         uf.find(coord)
         label_at_coord[coord] = glabel.value
+
+    for coord in label_at_coord:
+        for ws, we in wire_segments:
+            if _point_on_wire(coord, ws, we):
+                uf.union(coord, ws)
+                break
 
     name_to_coords: dict[str, list[tuple[float, float]]] = {}
     for coord, name in label_at_coord.items():

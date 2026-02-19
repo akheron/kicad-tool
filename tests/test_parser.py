@@ -367,6 +367,16 @@ def test_jolene_crystal_circuit():
     assert y1_pins["3"] & {("U5", "XOSC_Q2"), ("C101", "2")}
 
 
+def test_jolene_mid_wire_label():
+    """Labels placed in the middle of a wire (not at an endpoint) still connect."""
+    sch = parse_schematic(JOLENE)
+    nets = _nets_by_name(sch)
+    reset = _conn_keys(nets["~{RESET}"])
+    assert ("U1", "NRST") in reset
+    assert ("C8", "1") in reset
+    assert ("J3", "Pin_5") in reset
+
+
 @pytest.fixture
 def jolene_schematic():
     return parse_schematic(JOLENE)

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 
+class QuotedStr(str):
+    """A string that was originally quoted in S-expression source."""
+    pass
+
+
 def parse_sexp(text: str) -> list:
     tokens = _tokenize(text)
     result, _ = _parse_tokens(tokens, 0)
@@ -26,7 +31,13 @@ def _tokenize(text: str) -> list[str]:
             parts = []
             while j < n and text[j] != '"':
                 if text[j] == "\\" and j + 1 < n:
-                    parts.append(text[j + 1])
+                    ch = text[j + 1]
+                    if ch == "n":
+                        parts.append("\n")
+                    elif ch == "t":
+                        parts.append("\t")
+                    else:
+                        parts.append(ch)
                     j += 2
                 else:
                     parts.append(text[j])
@@ -57,7 +68,7 @@ def _parse_tokens(tokens: list[str], pos: int) -> tuple[list, int]:
 
 def _atom(token: str):
     if token.startswith('"'):
-        return token[1:-1]
+        return QuotedStr(token[1:-1])
     try:
         return int(token)
     except ValueError:
@@ -67,6 +78,80 @@ def _atom(token: str):
     except ValueError:
         pass
     return token
+
+
+def serialize_sexp(data: list) -> str:
+    return _serialize_node(data, 0) + "\n"
+
+
+def _serialize_node(data: list, indent: int) -> str:
+    has_child_lists = any(isinstance(item, list) for item in data[1:])
+
+    if not has_child_lists:
+        parts = [_format_atom(item) for item in data]
+        return "\t" * indent + "(" + " ".join(parts) + ")"
+
+    # Collect leading atoms (tag + args before first list child)
+    leading = []
+    list_children = []
+    found_list = False
+    for item in data:
+        if isinstance(item, list):
+            found_list = True
+            list_children.append(item)
+        elif not found_list:
+            leading.append(_format_atom(item))
+
+    prefix = "\t" * indent
+
+    # KiCad packs sibling leaf-list children with the same tag on one line,
+    # wrapping at ~120 chars (e.g. (pts (xy 1 2) (xy 3 4) (xy 5 6)))
+    if len(list_children) > 1 and _all_same_tag_leaves(list_children):
+        child_prefix = "\t" * (indent + 1)
+        formatted = [
+            "(" + " ".join(_format_atom(item) for item in child) + ")"
+            for child in list_children
+        ]
+        # Pack children into lines, wrapping at ~120 chars
+        packed_lines = []
+        current = child_prefix
+        for f in formatted:
+            if current == child_prefix:
+                current += f
+            elif len(current) + 1 + len(f) <= 112:
+                current += " " + f
+            else:
+                packed_lines.append(current)
+                current = child_prefix + f
+        packed_lines.append(current)
+        lines = [prefix + "(" + " ".join(leading)]
+        lines.extend(packed_lines)
+        lines.append(prefix + ")")
+        return "\n".join(lines)
+
+    lines = [prefix + "(" + " ".join(leading)]
+    for child in list_children:
+        lines.append(_serialize_node(child, indent + 1))
+    lines.append(prefix + ")")
+    return "\n".join(lines)
+
+
+def _all_same_tag_leaves(children: list[list]) -> bool:
+    """Check if all child lists are leaf nodes (no nested lists) with the same tag."""
+    tag = children[0][0]
+    return all(
+        child[0] == tag and not any(isinstance(item, list) for item in child[1:])
+        for child in children
+    )
+
+
+def _format_atom(value) -> str:
+    if isinstance(value, QuotedStr):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
+        return f'"{escaped}"'
+    if isinstance(value, float):
+        return f"{value:.10g}"
+    return str(value)
 
 
 class SexpNode:

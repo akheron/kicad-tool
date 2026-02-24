@@ -101,6 +101,8 @@ def _serialize_node(data: list, indent: int) -> str:
             list_children.append(item)
         elif not found_list:
             leading.append(_format_atom(item))
+        else:
+            raise ValueError(f"Atom {item!r} after list child in {data[0]!r} node")
 
     prefix = "\t" * indent
 

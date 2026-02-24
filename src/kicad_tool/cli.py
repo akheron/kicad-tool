@@ -13,6 +13,7 @@ Examples:
   kicad-tool netlist board.kicad_sch --summary     one-line-per-component summary
   kicad-tool bom board.kicad_sch                   bill of materials
   kicad-tool groups board.kicad_sch                component groups from labeled rectangles
+  kicad-tool set board.kicad_sch --ref U1 --set Value=40106B   edit a property
 """
 
 
@@ -55,10 +56,52 @@ def main():
     )
     groups_parser.add_argument("schematic", help="Path to .kicad_sch file")
 
+    set_parser = subparsers.add_parser(
+        "set",
+        help="Edit component properties",
+        description="Set property values on a component identified by reference. "
+        "Properties are created if they don't exist. Edits apply to all unit "
+        "instances of multi-unit components.",
+    )
+    set_parser.add_argument("schematic", help="Path to .kicad_sch file")
+    set_parser.add_argument(
+        "--ref", required=True, metavar="REF", help="Component reference (e.g. U1, R3)"
+    )
+    set_parser.add_argument(
+        "--set",
+        action="append",
+        required=True,
+        metavar="KEY=VALUE",
+        dest="assignments",
+        help="Property to set (e.g. Value=10k, MPN=SN74HC04N)",
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         sys.exit(1)
+
+    if args.command == "set":
+        from kicad_tool.editor import set_properties
+
+        assignments = {}
+        for a in args.assignments:
+            if "=" not in a:
+                print(f"Error: invalid assignment '{a}', expected KEY=VALUE", file=sys.stderr)
+                sys.exit(1)
+            key, value = a.split("=", 1)
+            if not key:
+                print(f"Error: empty key in '{a}'", file=sys.stderr)
+                sys.exit(1)
+            assignments[key] = value
+        try:
+            changes = set_properties(args.schematic, args.ref, assignments)
+            for c in changes:
+                print(c)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     schematic = parse_schematic(args.schematic)
 

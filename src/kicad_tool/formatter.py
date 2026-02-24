@@ -3,12 +3,13 @@ from kicad_tool.models import Group, Schematic, Net, PinConnection
 
 def format_netlist(schematic: Schematic, components_filter: set[str] | None = None) -> str:
     pin_to_nets = _build_pin_index(schematic.nets)
+    ref_to_group = _build_ref_to_group(schematic.groups)
 
     lines = []
     for comp in schematic.components:
         if components_filter and comp.reference not in components_filter:
             continue
-        lines.append(_format_component_header(comp))
+        lines.append(_format_component_header(comp, ref_to_group.get(comp.reference)))
         pins_on_nets = _get_component_pins(comp.reference, pin_to_nets)
         for pin_name, net, peers in pins_on_nets:
             lines.append(_format_pin_line(pin_name, net, peers, comp.reference))
@@ -84,11 +85,22 @@ def _get_component_pins(
     return results
 
 
-def _format_component_header(comp) -> str:
+def _build_ref_to_group(groups: list[Group]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for group in groups:
+        if group.name:
+            for ref in group.references:
+                mapping[ref] = group.name
+    return mapping
+
+
+def _format_component_header(comp, group: str | None = None) -> str:
     parts = [comp.reference, comp.value, comp.footprint]
     if comp.properties:
         props = ", ".join(f"{k}: {v}" for k, v in comp.properties.items())
         parts.append("{" + props + "}")
+    if group:
+        parts.append(f"[{group}]")
     return "  ".join(parts)
 
 

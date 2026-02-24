@@ -83,12 +83,7 @@ def main():
                 if net.name == args.net:
                     net_refs.update(c.component_ref for c in net.connections)
             matched &= net_refs
-        neighbors = set()
-        for net in schematic.nets:
-            refs_in_net = {c.component_ref for c in net.connections}
-            if refs_in_net & matched:
-                neighbors.update(refs_in_net)
-        components_filter = matched | neighbors
+        components_filter = matched
     elif args.net:
         components_filter = set()
         for net in schematic.nets:

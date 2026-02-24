@@ -69,6 +69,23 @@ def test_format_filtered_by_component():
     assert "D1  RED" not in output
 
 
+def test_format_netlist_shows_group():
+    components = [
+        Component("U1", "STM32F103", "LQFP-48", "U1"),
+        Component("R1", "220", "0402", "R1"),
+    ]
+    nets = [
+        Net("SIG", [PinConnection("U1", "PA0"), PinConnection("R1", "1")]),
+    ]
+    groups = [Group(name="Power", references=["R1"])]
+    sch = Schematic(components=components, nets=nets, groups=groups)
+    output = format_netlist(sch)
+    assert "R1  220  0402  [Power]" in output
+    # U1 is not in any group, no bracket
+    assert "U1  STM32F103  LQFP-48" in output
+    assert "[" not in output.splitlines()[0]  # U1 line has no group
+
+
 def test_format_bom():
     sch = _make_test_schematic()
     output = format_bom(sch)

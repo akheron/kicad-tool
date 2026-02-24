@@ -7,13 +7,15 @@ CLI tool that extracts netlist connectivity and component properties from KiCad 
 Three-layer pipeline: parser → data model → formatter, wired together by the CLI.
 
 - `src/kicad_tool/models.py` — Dataclasses: `Component`, `PinConnection`, `Net`, `Schematic`
-- `src/kicad_tool/parser.py` — Loads `.kicad_sch` via `kicad-skip`, builds nets using coordinate-based union-find
+- `src/kicad_tool/sexp.py` — S-expression tokenizer/parser and `SexpNode` accessor
+- `src/kicad_tool/parser.py` — Loads `.kicad_sch`, builds nets using coordinate-based union-find
 - `src/kicad_tool/formatter.py` — Renders component-centric adjacency text (`format_netlist`, `format_summary`, `format_bom`, `format_groups`)
 - `src/kicad_tool/cli.py` — Argparse CLI with `netlist`, `bom`, `groups` subcommands
 
 ## Dependencies
 
-- `kicad-skip` — KiCad S-expression schematic parsing
+No runtime dependencies. The S-expression parser is built-in (`src/kicad_tool/sexp.py`).
+
 - `pytest` — testing (dev dependency)
 
 ## Running commands

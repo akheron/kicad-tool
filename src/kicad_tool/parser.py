@@ -1,38 +1,49 @@
 from __future__ import annotations
 
 import math
-import re
 from pathlib import Path
 
-from skip import Schematic as SkipSchematic
-
 from kicad_tool.models import Component, Group, Net, PinConnection, Schematic
+from kicad_tool.sexp import SexpNode, parse_sexp
 
 _GROUP_LABEL_Y_TOLERANCE = 3.0
 
 
 def parse_schematic(path: str | Path) -> Schematic:
-    skip_sch = SkipSchematic(str(path))
-    lib_unit_pins = _build_lib_unit_pins(skip_sch)
-    components, positions = _extract_components(skip_sch, lib_unit_pins)
-    pin_names = _build_pin_name_map(skip_sch, lib_unit_pins)
-    nets = _extract_nets(skip_sch, pin_names, lib_unit_pins)
-    groups = _extract_groups(skip_sch, positions)
+    text = Path(path).read_text()
+    root = SexpNode(parse_sexp(text))
+    lib_unit_pins = _build_lib_unit_pins(root)
+    components, positions = _extract_components(root, lib_unit_pins)
+    pin_names = _build_pin_name_map(root, lib_unit_pins)
+    nets = _extract_nets(root, pin_names, lib_unit_pins)
+    groups = _extract_groups(root, positions)
     return Schematic(components=components, nets=nets, groups=groups)
 
 
-def _get_lib_symbol(sch: SkipSchematic, lib_id: str):
-    attr_name = re.sub(r"[^a-zA-Z0-9_]", "_", lib_id)
-    for name in (attr_name, "n" + attr_name):
-        try:
-            return getattr(sch.lib_symbols, name)
-        except AttributeError:
-            continue
+def _get_property(node: SexpNode, name: str) -> str:
+    for prop in node.children("property"):
+        if prop.value == name:
+            return str(prop.raw[2]) if len(prop.raw) > 2 else ""
+    return ""
+
+
+def _get_lib_symbol(root: SexpNode, lib_id: str) -> SexpNode | None:
+    lib_symbols = root.child("lib_symbols")
+    if lib_symbols is None:
+        return None
+    for sym in lib_symbols.children("symbol"):
+        if sym.value == lib_id:
+            return sym
     return None
 
 
+def _is_power(sym: SexpNode) -> bool:
+    ref = _get_property(sym, "Reference")
+    return ref.startswith("#")
+
+
 def _is_power_only_unit(
-    lib_unit_pins: dict[tuple[str, int], dict[str, object]],
+    lib_unit_pins: dict[tuple[str, int], dict[str, SexpNode]],
     lib_id: str,
     unit_num: int,
 ) -> bool:
@@ -45,13 +56,13 @@ def _is_power_only_unit(
     )
 
 
-def _find_multi_unit_refs(sch: SkipSchematic) -> set[str]:
+def _find_multi_unit_refs(root: SexpNode) -> set[str]:
     units_per_ref: dict[str, set[int]] = {}
-    for sym in sch.symbol:
-        if sym.is_power:
+    for sym in root.children("symbol"):
+        if _is_power(sym):
             continue
-        ref = sym.property.Reference.value
-        units_per_ref.setdefault(ref, set()).add(sym.unit.value)
+        ref = _get_property(sym, "Reference")
+        units_per_ref.setdefault(ref, set()).add(sym.child("unit").value)
     return {ref for ref, units in units_per_ref.items() if len(units) > 1}
 
 
@@ -60,7 +71,7 @@ def _resolve_comp_ref(
     unit_num: int,
     lib_id: str,
     multi_unit_refs: set[str],
-    lib_unit_pins: dict[tuple[str, int], dict[str, object]],
+    lib_unit_pins: dict[tuple[str, int], dict[str, SexpNode]],
 ) -> str:
     if base_ref in multi_unit_refs:
         if _is_power_only_unit(lib_unit_pins, lib_id, unit_num):
@@ -70,20 +81,20 @@ def _resolve_comp_ref(
 
 
 def _extract_components(
-    sch: SkipSchematic,
-    lib_unit_pins: dict[tuple[str, int], dict[str, object]],
+    root: SexpNode,
+    lib_unit_pins: dict[tuple[str, int], dict[str, SexpNode]],
 ) -> tuple[list[Component], dict[str, tuple[float, float]]]:
-    multi_unit_refs = _find_multi_unit_refs(sch)
+    multi_unit_refs = _find_multi_unit_refs(root)
 
     seen: set[str] = set()
     components = []
     positions: dict[str, tuple[float, float]] = {}
-    for sym in sch.symbol:
-        if sym.is_power:
+    for sym in root.children("symbol"):
+        if _is_power(sym):
             continue
-        base_ref = sym.property.Reference.value
-        unit_num = sym.unit.value
-        lib_id = sym.lib_id.value
+        base_ref = _get_property(sym, "Reference")
+        unit_num = sym.child("unit").value
+        lib_id = sym.child("lib_id").value
 
         reference = _resolve_comp_ref(base_ref, unit_num, lib_id, multi_unit_refs, lib_unit_pins)
         if reference == base_ref and base_ref in multi_unit_refs:
@@ -93,15 +104,14 @@ def _extract_components(
             continue
         seen.add(reference)
 
-        value = sym.property.Value.value
-        try:
-            footprint = sym.property.Footprint.value
-        except (AttributeError, KeyError):
-            footprint = ""
+        value = _get_property(sym, "Value")
+        footprint = _get_property(sym, "Footprint")
         props = {}
-        for prop in sym.property:
-            if prop.name not in ("Reference", "Value", "Footprint", "Datasheet"):
-                props[prop.name] = prop.value
+        for prop in sym.children("property"):
+            name = prop.value
+            if name not in ("Reference", "Value", "Footprint", "Datasheet"):
+                props[name] = str(prop.raw[2]) if len(prop.raw) > 2 else ""
+        at = sym.child("at").values
         components.append(Component(
             reference=reference,
             value=value,
@@ -109,54 +119,52 @@ def _extract_components(
             base_ref=base_ref,
             properties=props,
         ))
-        positions[reference] = (sym.at.value[0], sym.at.value[1])
+        positions[reference] = (at[0], at[1])
     return components, positions
 
 
-def _parse_lib_sub_unit(sub) -> int:
-    raw_name = sub.raw[1]
+def _parse_lib_sub_unit(sub: SexpNode) -> int:
+    raw_name = sub.value
     parts = raw_name.rsplit("_", 2)
     return int(parts[-2])
 
 
-def _build_lib_unit_pins(sch: SkipSchematic) -> dict[tuple[str, int], dict[str, object]]:
-    """Map (lib_id, unit_number) to {pin_number: lib_pin_object}.
-
-    Unit 0 in the library means shared across all units.
-    """
+def _build_lib_unit_pins(root: SexpNode) -> dict[tuple[str, int], dict[str, SexpNode]]:
+    """Map (lib_id, unit_number) to {pin_number: lib_pin_node}."""
     seen_libs: set[str] = set()
-    result: dict[tuple[str, int], dict[str, object]] = {}
+    result: dict[tuple[str, int], dict[str, SexpNode]] = {}
 
-    for sym in sch.symbol:
-        if sym.is_power:
+    for sym in root.children("symbol"):
+        if _is_power(sym):
             continue
-        lib_id = sym.lib_id.value
+        lib_id = sym.child("lib_id").value
         if lib_id in seen_libs:
             continue
         seen_libs.add(lib_id)
-        lib_sym = _get_lib_symbol(sch, lib_id)
+        lib_sym = _get_lib_symbol(root, lib_id)
         if lib_sym is None:
             continue
-        for sub in lib_sym.symbol:
-            if not hasattr(sub, "pin") or sub.pin is None:
+        for sub in lib_sym.children("symbol"):
+            pins = list(sub.children("pin"))
+            if not pins:
                 continue
             sub_unit = _parse_lib_sub_unit(sub)
             key = (lib_id, sub_unit)
             if key in result:
                 continue
-            pin_map: dict[str, object] = {}
-            for pin in sub.pin:
-                pin_map[str(pin.number.value)] = pin
+            pin_map: dict[str, SexpNode] = {}
+            for pin in pins:
+                pin_map[str(pin.child("number").value)] = pin
             result[key] = pin_map
 
     return result
 
 
 def _get_unit_pins(
-    lib_unit_pins: dict[tuple[str, int], dict[str, object]],
+    lib_unit_pins: dict[tuple[str, int], dict[str, SexpNode]],
     lib_id: str,
     unit_num: int,
-) -> dict[str, object]:
+) -> dict[str, SexpNode]:
     pins = dict(lib_unit_pins.get((lib_id, 0), {}))
     if unit_num != 0:
         pins.update(lib_unit_pins.get((lib_id, unit_num), {}))
@@ -164,39 +172,37 @@ def _get_unit_pins(
 
 
 def _build_pin_name_map(
-    sch: SkipSchematic,
-    lib_unit_pins: dict[tuple[str, int], dict[str, object]],
+    root: SexpNode,
+    lib_unit_pins: dict[tuple[str, int], dict[str, SexpNode]],
 ) -> dict[tuple[str, str], str]:
     lib_pin_names: dict[str, dict[str, str]] = {}
-    for sym in sch.symbol:
-        if sym.is_power:
+    for sym in root.children("symbol"):
+        if _is_power(sym):
             continue
-        lib_id = sym.lib_id.value
+        lib_id = sym.child("lib_id").value
         if lib_id in lib_pin_names:
             continue
-        lib_sym = _get_lib_symbol(sch, lib_id)
+        lib_sym = _get_lib_symbol(root, lib_id)
         if lib_sym is None:
             continue
         pin_map: dict[str, str] = {}
-        for sub in lib_sym.symbol:
-            if not hasattr(sub, "pin") or sub.pin is None:
-                continue
-            for pin in sub.pin:
-                number = str(pin.number.value)
-                name = str(pin.name.value)
+        for sub in lib_sym.children("symbol"):
+            for pin in sub.children("pin"):
+                number = str(pin.child("number").value)
+                name = str(pin.child("name").value)
                 if name and name != "~":
                     pin_map[number] = name
         lib_pin_names[lib_id] = pin_map
 
-    multi_unit_refs = _find_multi_unit_refs(sch)
+    multi_unit_refs = _find_multi_unit_refs(root)
 
     result: dict[tuple[str, str], str] = {}
-    for sym in sch.symbol:
-        if sym.is_power:
+    for sym in root.children("symbol"):
+        if _is_power(sym):
             continue
-        base_ref = sym.property.Reference.value
-        lib_id = sym.lib_id.value
-        unit_num = sym.unit.value
+        base_ref = _get_property(sym, "Reference")
+        lib_id = sym.child("lib_id").value
+        unit_num = sym.child("unit").value
         pin_map = lib_pin_names.get(lib_id, {})
         unit_pins = _get_unit_pins(lib_unit_pins, lib_id, unit_num)
         comp_ref = _resolve_comp_ref(base_ref, unit_num, lib_id, multi_unit_refs, lib_unit_pins)
@@ -255,45 +261,45 @@ def _point_on_wire(
     return False
 
 
-def _pin_location(sym, lib_pin) -> tuple[float, float]:
-    sx, sy = sym.at.value[0], sym.at.value[1]
-    sym_rot = sym.at.value[2] if len(sym.at.value) > 2 else 0
+def _pin_location(sym: SexpNode, lib_pin: SexpNode) -> tuple[float, float]:
+    sym_at = sym.child("at").values
+    sx, sy = sym_at[0], sym_at[1]
+    sym_rot = sym_at[2] if len(sym_at) > 2 else 0
 
-    px, py = lib_pin.at.value[0], lib_pin.at.value[1]
+    pin_at = lib_pin.child("at").values
+    px, py = pin_at[0], pin_at[1]
 
     theta = math.radians(sym_rot)
     rx = px * math.cos(theta) - py * math.sin(theta)
     ry = px * math.sin(theta) + py * math.cos(theta)
 
-    if hasattr(sym, "mirror") and sym.mirror is not None:
-        try:
-            mval = sym.mirror.value
-            if hasattr(mval, "value"):
-                mval = mval.value()
-            if mval == "x":
-                ry = -ry
-            elif mval == "y":
-                rx = -rx
-        except (AttributeError, TypeError):
-            pass
+    mirror = sym.child("mirror")
+    if mirror is not None:
+        mval = mirror.value
+        if mval == "x":
+            ry = -ry
+        elif mval == "y":
+            rx = -rx
 
     return _coord_key(sx + rx, sy - ry)
 
 
 def _extract_groups(
-    sch: SkipSchematic,
+    root: SexpNode,
     positions: dict[str, tuple[float, float]],
 ) -> list[Group]:
     rects = []
-    for r in sch.rectangle:
-        x1, y1 = r.start.value[0], r.start.value[1]
-        x2, y2 = r.end.value[0], r.end.value[1]
+    for r in root.children("rectangle"):
+        start = r.child("start").values
+        end = r.child("end").values
+        x1, y1 = start[0], start[1]
+        x2, y2 = end[0], end[1]
         rects.append((min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)))
 
     texts = []
-    if hasattr(sch, "text") and sch.text is not None:
-        for t in sch.text:
-            texts.append((t.value, t.at.value[0], t.at.value[1]))
+    for t in root.children("text"):
+        at = t.child("at").values
+        texts.append((t.value, at[0], at[1]))
 
     labeled: set[int] = set()
     rect_names: dict[int, str] = {}
@@ -328,9 +334,9 @@ def _extract_groups(
 
 
 def _extract_nets(
-    sch: SkipSchematic,
+    root: SexpNode,
     pin_names: dict[tuple[str, str], str],
-    lib_unit_pins: dict[tuple[str, int], dict[str, object]],
+    lib_unit_pins: dict[tuple[str, int], dict[str, SexpNode]],
 ) -> list[Net]:
     uf = _UnionFind()
 
@@ -338,22 +344,22 @@ def _extract_nets(
     label_at_coord: dict[tuple[float, float], str] = {}
     power_net_names: set[str] = set()
 
-    multi_unit_refs = _find_multi_unit_refs(sch)
+    multi_unit_refs = _find_multi_unit_refs(root)
 
-    for sym in sch.symbol:
-        if sym.is_power:
-            value = sym.property.Value.value
+    for sym in root.children("symbol"):
+        if _is_power(sym):
+            value = _get_property(sym, "Value")
             if value == "PWR_FLAG":
                 continue
-            at = sym.at.value
+            at = sym.child("at").values
             coord = _coord_key(at[0], at[1])
             uf.find(coord)
             power_net_names.add(value)
             label_at_coord[coord] = value
             continue
-        base_ref = sym.property.Reference.value
-        lib_id = sym.lib_id.value
-        unit_num = sym.unit.value
+        base_ref = _get_property(sym, "Reference")
+        lib_id = sym.child("lib_id").value
+        unit_num = sym.child("unit").value
         unit_pins = _get_unit_pins(lib_unit_pins, lib_id, unit_num)
         comp_ref = _resolve_comp_ref(base_ref, unit_num, lib_id, multi_unit_refs, lib_unit_pins)
 
@@ -364,23 +370,27 @@ def _extract_nets(
             pin_at_coord.setdefault(coord, []).append((comp_ref, resolved))
 
     wire_segments = []
-    for wire in sch.wire:
-        start = _coord_key(wire.start.value[0], wire.start.value[1])
-        end = _coord_key(wire.end.value[0], wire.end.value[1])
+    for wire in root.children("wire"):
+        pts = list(wire.child("pts").children("xy"))
+        start = _coord_key(pts[0].values[0], pts[0].values[1])
+        end = _coord_key(pts[1].values[0], pts[1].values[1])
         uf.union(start, end)
         wire_segments.append((start, end))
 
-    for junc in sch.junction:
-        coord = _coord_key(junc.at.value[0], junc.at.value[1])
+    for junc in root.children("junction"):
+        at = junc.child("at").values
+        coord = _coord_key(at[0], at[1])
         uf.find(coord)
 
-    for label in sch.label:
-        coord = _coord_key(label.at.value[0], label.at.value[1])
+    for label in root.children("label"):
+        at = label.child("at").values
+        coord = _coord_key(at[0], at[1])
         uf.find(coord)
         label_at_coord[coord] = label.value
 
-    for glabel in sch.global_label:
-        coord = _coord_key(glabel.at.value[0], glabel.at.value[1])
+    for glabel in root.children("global_label"):
+        at = glabel.child("at").values
+        coord = _coord_key(at[0], at[1])
         uf.find(coord)
         label_at_coord[coord] = glabel.value
 

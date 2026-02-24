@@ -5,4 +5,5 @@ dist/
 *.egg-info/
 .venv/
 .uv_cache/
+.DS_Store
 .claude/settings.local.json

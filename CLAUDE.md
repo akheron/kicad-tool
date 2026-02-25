@@ -10,7 +10,8 @@ Three-layer pipeline: parser → data model → formatter, wired together by the
 - `src/kicad_tool/sexp.py` — S-expression tokenizer/parser and `SexpNode` accessor
 - `src/kicad_tool/parser.py` — Loads `.kicad_sch`, builds nets using coordinate-based union-find
 - `src/kicad_tool/formatter.py` — Renders component-centric adjacency text (`format_netlist`, `format_summary`, `format_bom`, `format_groups`)
-- `src/kicad_tool/cli.py` — Argparse CLI with `netlist`, `bom`, `groups` subcommands
+- `src/kicad_tool/editor.py` — Edits component properties in `.kicad_sch` files (`set_properties`)
+- `src/kicad_tool/cli.py` — Argparse CLI with `netlist`, `bom`, `groups`, `set` subcommands; `match_refs` helper for comma-separated glob filtering
 
 ## Dependencies
 
@@ -38,4 +39,4 @@ Always run `git` without the `-C` flag so that sandbox allow rules work correctl
 
 Test fixtures live in `tests/fixtures/`. The `hirvi.kicad_sch` fixture is a real KiCad schematic with multi-unit ICs (40106, 4013, 4071, 4081), an H-bridge motor driver, switches, and global/power labels.
 
-Tests cover: data model, formatter output (netlist, BOM, clusters), parser extraction (per-unit components, power nets, pin names, connectivity), analyzer (clustering), CLI integration (via subprocess).
+Tests cover: data model, formatter output (netlist, BOM, groups), parser extraction (per-unit components, power nets, pin names, connectivity), editor (property set/add), match_refs helper, CLI integration (via subprocess).

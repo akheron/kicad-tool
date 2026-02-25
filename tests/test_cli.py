@@ -101,6 +101,30 @@ def test_cli_set():
         os.unlink(path)
 
 
+def test_cli_bom_ref_filter():
+    result = subprocess.run(
+        [sys.executable, "-m", "kicad_tool.cli", "bom", "--ref", "R*", HIRVI],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "R1" in result.stdout
+    # U1A should not appear in filtered BOM
+    assert "U1A" not in result.stdout
+
+
+def test_cli_bom_ref_comma():
+    result = subprocess.run(
+        [sys.executable, "-m", "kicad_tool.cli", "bom", "--ref", "R1,C1", HIRVI],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "R1" in result.stdout
+    assert "C1" in result.stdout
+    assert "U1A" not in result.stdout
+
+
 def test_cli_bom_fields():
     fd, path = tempfile.mkstemp(suffix=".kicad_sch")
     os.close(fd)
@@ -160,6 +184,43 @@ def test_cli_bom_fields_all():
         os.unlink(path)
 
 
+def test_cli_netlist_ref_comma():
+    result = subprocess.run(
+        [sys.executable, "-m", "kicad_tool.cli", "netlist", "--ref", "Q1,Q2", HIRVI],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "Q1" in result.stdout
+    assert "Q2" in result.stdout
+    # Some other component should not appear
+    assert "M1  " not in result.stdout
+
+
+def test_cli_set_glob_ref():
+    fd, path = tempfile.mkstemp(suffix=".kicad_sch")
+    os.close(fd)
+    shutil.copy2(HIRVI, path)
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "kicad_tool.cli",
+                "set", path,
+                "--ref", "C*",
+                "--set", "MPN=TESTPART",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        # Should have modified multiple C refs
+        assert "MPN" in result.stdout
+        # Verify at least 2 components were modified (there are multiple C refs in hirvi)
+        assert result.stdout.count("MPN") >= 2
+    finally:
+        os.unlink(path)
+
+
 def test_cli_set_error_ref_not_found():
     fd, path = tempfile.mkstemp(suffix=".kicad_sch")
     os.close(fd)
@@ -176,6 +237,6 @@ def test_cli_set_error_ref_not_found():
             text=True,
         )
         assert result.returncode != 0
-        assert "not found" in result.stderr
+        assert "no components found" in result.stderr
     finally:
         os.unlink(path)

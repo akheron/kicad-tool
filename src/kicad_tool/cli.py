@@ -6,16 +6,35 @@ from kicad_tool.parser import parse_schematic
 from kicad_tool.formatter import format_bom, format_groups, format_netlist, format_summary
 
 
+def match_refs(references, pattern_str):
+    patterns = [p.strip() for p in pattern_str.split(",")]
+    matched = set()
+    for ref in references:
+        for pattern in patterns:
+            if fnmatch(ref, pattern):
+                matched.add(ref)
+                break
+    return matched
+
+
 EXAMPLES = """\
 Examples:
   kicad-tool netlist board.kicad_sch               full netlist
-  kicad-tool netlist board.kicad_sch --ref 'U1*'   filter by reference
+  kicad-tool netlist board.kicad_sch --ref 'U1*'   filter by reference glob
+  kicad-tool netlist board.kicad_sch --ref 'U*,R*' multiple patterns
   kicad-tool netlist board.kicad_sch --summary     one-line-per-component summary
   kicad-tool bom board.kicad_sch                   bill of materials
+  kicad-tool bom board.kicad_sch --ref 'R*'        BOM filtered by reference
   kicad-tool bom board.kicad_sch --fields LCSC,MF  BOM with custom fields
   kicad-tool bom board.kicad_sch --fields-all      BOM with all custom fields
   kicad-tool groups board.kicad_sch                component groups from labeled rectangles
   kicad-tool set board.kicad_sch --ref U1 --set Value=40106B   edit a property
+  kicad-tool set board.kicad_sch --ref 'R*' --set MPN=RC0402   batch edit
+
+Ref patterns:
+  U1         exact match
+  U*         glob wildcard
+  U*,R*      comma-separated patterns (matches all U and R refs)
 """
 
 
@@ -36,7 +55,7 @@ def main():
     )
     netlist_parser.add_argument("schematic", help="Path to .kicad_sch file")
     netlist_parser.add_argument(
-        "--ref", metavar="PATTERN", help="Filter by component reference (glob, e.g. 'U1*')"
+        "--ref", metavar="PATTERN", help="Filter by reference (comma-separated globs, e.g. 'U1*,R*')"
     )
     netlist_parser.add_argument("--net", metavar="NAME", help="Filter by net name")
     netlist_parser.add_argument(
@@ -57,6 +76,10 @@ def main():
         "--fields-all", action="store_true",
         help="Include all custom properties as extra columns",
     )
+    bom_parser.add_argument(
+        "--ref", metavar="PATTERN",
+        help="Filter by reference (comma-separated globs, e.g. 'R*,C1')",
+    )
 
     groups_parser = subparsers.add_parser(
         "groups",
@@ -75,7 +98,8 @@ def main():
     )
     set_parser.add_argument("schematic", help="Path to .kicad_sch file")
     set_parser.add_argument(
-        "--ref", required=True, metavar="REF", help="Component reference (e.g. U1, R3)"
+        "--ref", required=True, metavar="PATTERN",
+        help="Component reference pattern (comma-separated globs, e.g. 'R*,C1')",
     )
     set_parser.add_argument(
         "--set",
@@ -104,10 +128,18 @@ def main():
                 print(f"Error: empty key in '{a}'", file=sys.stderr)
                 sys.exit(1)
             assignments[key] = value
+
+        schematic = parse_schematic(args.schematic)
+        matched = match_refs((c.base_ref for c in schematic.components), args.ref)
+        if not matched:
+            print(f"Error: no components found matching '{args.ref}'", file=sys.stderr)
+            sys.exit(1)
+
         try:
-            changes = set_properties(args.schematic, args.ref, assignments)
-            for c in changes:
-                print(c)
+            for ref in sorted(matched):
+                changes = set_properties(args.schematic, ref, assignments)
+                for c in changes:
+                    print(f"{ref}: {c}")
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -121,7 +153,12 @@ def main():
 
     if args.command == "bom":
         fields = args.fields.split(",") if args.fields else None
-        print(format_bom(schematic, fields=fields, fields_all=args.fields_all), end="")
+        refs_filter = None
+        if args.ref:
+            refs_filter = match_refs(
+                (c.reference for c in schematic.components), args.ref
+            )
+        print(format_bom(schematic, fields=fields, fields_all=args.fields_all, refs_filter=refs_filter), end="")
         return
 
     if args.summary:
@@ -130,7 +167,9 @@ def main():
 
     components_filter = None
     if args.ref:
-        matched = {c.reference for c in schematic.components if fnmatch(c.reference, args.ref)}
+        matched = match_refs(
+            (c.reference for c in schematic.components), args.ref
+        )
         if args.net:
             net_refs = set()
             for net in schematic.nets:

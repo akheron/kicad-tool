@@ -36,8 +36,12 @@ def format_bom(
     schematic: Schematic,
     fields: list[str] | None = None,
     fields_all: bool = False,
+    refs_filter: set[str] | None = None,
 ) -> str:
     sorted_comps = sorted(schematic.components, key=lambda c: c.reference)
+
+    if refs_filter is not None:
+        sorted_comps = [c for c in sorted_comps if c.reference in refs_filter]
 
     if fields_all:
         all_keys: dict[str, None] = {}

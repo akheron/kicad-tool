@@ -107,6 +107,22 @@ def test_format_bom():
     assert any("U1" in l and "STM32F103" in l and "LQFP-48" in l for l in data_lines)
 
 
+def test_format_bom_refs_filter():
+    sch = _make_test_schematic()
+    output = format_bom(sch, refs_filter={"R1", "D1"})
+    lines = output.strip().splitlines()
+
+    # Header is present
+    assert "Ref" in lines[0]
+
+    # Only R1 and D1, not U1
+    data_lines = [l for l in lines[1:] if l.strip()]
+    refs = [l.split()[0] for l in data_lines]
+    assert "R1" in refs
+    assert "D1" in refs
+    assert "U1" not in refs
+
+
 def test_format_bom_with_fields():
     """Custom fields appear as extra columns."""
     components = [

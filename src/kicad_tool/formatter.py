@@ -32,25 +32,43 @@ def format_summary(schematic: Schematic) -> str:
     return "\n".join(lines) + "\n"
 
 
-def format_bom(schematic: Schematic) -> str:
-    pin_counts: dict[str, int] = {}
-    for net in schematic.nets:
-        for conn in net.connections:
-            pin_counts[conn.component_ref] = pin_counts.get(conn.component_ref, 0) + 1
-
+def format_bom(
+    schematic: Schematic,
+    fields: list[str] | None = None,
+    fields_all: bool = False,
+) -> str:
     sorted_comps = sorted(schematic.components, key=lambda c: c.reference)
+
+    if fields_all:
+        all_keys: dict[str, None] = {}
+        for comp in sorted_comps:
+            for key in comp.properties:
+                all_keys[key] = None
+        fields = list(all_keys)
 
     ref_width = max(len("Ref"), max((len(c.reference) for c in sorted_comps), default=0))
     val_width = max(len("Value"), max((len(c.value) for c in sorted_comps), default=0))
     fp_width = max(len("Footprint"), max((len(c.footprint) for c in sorted_comps), default=0))
 
-    header = f"{'Ref':<{ref_width}}  {'Value':<{val_width}}  {'Footprint':<{fp_width}}  Pins"
+    field_widths = []
+    if fields:
+        for f in fields:
+            w = max(len(f), max((len(c.properties.get(f, "")) for c in sorted_comps), default=0))
+            field_widths.append(w)
+
+    header = f"{'Ref':<{ref_width}}  {'Value':<{val_width}}  {'Footprint':<{fp_width}}"
+    if fields:
+        for f, w in zip(fields, field_widths):
+            header += f"  {f:<{w}}"
     lines = [header]
+
     for comp in sorted_comps:
-        pins = pin_counts.get(comp.reference, 0)
-        lines.append(
-            f"{comp.reference:<{ref_width}}  {comp.value:<{val_width}}  {comp.footprint:<{fp_width}}  {pins}"
-        )
+        line = f"{comp.reference:<{ref_width}}  {comp.value:<{val_width}}  {comp.footprint:<{fp_width}}"
+        if fields:
+            for f, w in zip(fields, field_widths):
+                line += f"  {comp.properties.get(f, ''):<{w}}"
+        lines.append(line)
+
     return "\n".join(lines) + "\n"
 
 

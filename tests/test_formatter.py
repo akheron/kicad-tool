@@ -91,11 +91,11 @@ def test_format_bom():
     output = format_bom(sch)
     lines = output.strip().splitlines()
 
-    # Header row
+    # Header row has Ref, Value, Footprint but no Pins
     assert "Ref" in lines[0]
     assert "Value" in lines[0]
     assert "Footprint" in lines[0]
-    assert "Pins" in lines[0]
+    assert "Pins" not in lines[0]
 
     # Components sorted alphabetically
     data_lines = [l for l in lines[1:] if l.strip()]
@@ -107,19 +107,57 @@ def test_format_bom():
     assert any("U1" in l and "STM32F103" in l and "LQFP-48" in l for l in data_lines)
 
 
-def test_format_bom_pin_counts():
-    """Pin count reflects number of net connections per component."""
-    sch = _make_test_schematic()
-    output = format_bom(sch)
-    lines = output.strip().splitlines()[1:]
+def test_format_bom_with_fields():
+    """Custom fields appear as extra columns."""
+    components = [
+        Component("C1", "12pF", "C_0402", "C1", {"LCSC": "C76948", "MF": "muRata", "MP": "GRM1555"}),
+        Component("U2", "CC1101", "RGP20", "U2", {"LCSC": "C2654650", "MF": "Texas Instruments"}),
+    ]
+    sch = Schematic(components=components, nets=[])
+    output = format_bom(sch, fields=["LCSC", "MF", "MP"])
+    lines = output.strip().splitlines()
 
-    # U1 has 3 connections: VDD (VCC), VSS (GND), PA0 (LED_DRIVE)
-    u1_line = next(l for l in lines if l.startswith("U1"))
-    assert u1_line.split()[-1] == "3"
+    # Header has the extra field columns
+    assert "LCSC" in lines[0]
+    assert "MF" in lines[0]
+    assert "MP" in lines[0]
 
-    # R1 has 2 connections: pin 1 (LED_DRIVE), pin 2 (unnamed)
-    r1_line = next(l for l in lines if l.startswith("R1"))
-    assert r1_line.split()[-1] == "2"
+    # C1 has all three fields
+    c1_line = next(l for l in lines[1:] if l.startswith("C1"))
+    assert "C76948" in c1_line
+    assert "muRata" in c1_line
+    assert "GRM1555" in c1_line
+
+    # U2 has LCSC and MF but not MP — MP column should be empty
+    u2_line = next(l for l in lines[1:] if l.startswith("U2"))
+    assert "C2654650" in u2_line
+    assert "Texas Instruments" in u2_line
+
+
+def test_format_bom_fields_all():
+    """--fields-all collects all custom property keys across all components."""
+    components = [
+        Component("C1", "12pF", "C_0402", "C1", {"LCSC": "C76948", "MF": "muRata"}),
+        Component("R1", "10k", "R_0402", "R1", {"LCSC": "C123", "MP": "RC0402"}),
+    ]
+    sch = Schematic(components=components, nets=[])
+    output = format_bom(sch, fields_all=True)
+    lines = output.strip().splitlines()
+
+    # All three unique property keys should appear in the header
+    assert "LCSC" in lines[0]
+    assert "MF" in lines[0]
+    assert "MP" in lines[0]
+
+    # C1 has LCSC and MF but not MP
+    c1_line = next(l for l in lines[1:] if l.startswith("C1"))
+    assert "C76948" in c1_line
+    assert "muRata" in c1_line
+
+    # R1 has LCSC and MP but not MF
+    r1_line = next(l for l in lines[1:] if l.startswith("R1"))
+    assert "C123" in r1_line
+    assert "RC0402" in r1_line
 
 
 

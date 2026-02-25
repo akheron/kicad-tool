@@ -12,6 +12,8 @@ Examples:
   kicad-tool netlist board.kicad_sch --ref 'U1*'   filter by reference
   kicad-tool netlist board.kicad_sch --summary     one-line-per-component summary
   kicad-tool bom board.kicad_sch                   bill of materials
+  kicad-tool bom board.kicad_sch --fields LCSC,MF  BOM with custom fields
+  kicad-tool bom board.kicad_sch --fields-all      BOM with all custom fields
   kicad-tool groups board.kicad_sch                component groups from labeled rectangles
   kicad-tool set board.kicad_sch --ref U1 --set Value=40106B   edit a property
 """
@@ -47,6 +49,14 @@ def main():
         description="Print a bill of materials: components grouped by value with reference lists.",
     )
     bom_parser.add_argument("schematic", help="Path to .kicad_sch file")
+    bom_parser.add_argument(
+        "--fields", metavar="F1,F2,...",
+        help="Comma-separated custom property names to include as extra columns",
+    )
+    bom_parser.add_argument(
+        "--fields-all", action="store_true",
+        help="Include all custom properties as extra columns",
+    )
 
     groups_parser = subparsers.add_parser(
         "groups",
@@ -110,7 +120,8 @@ def main():
         return
 
     if args.command == "bom":
-        print(format_bom(schematic), end="")
+        fields = args.fields.split(",") if args.fields else None
+        print(format_bom(schematic, fields=fields, fields_all=args.fields_all), end="")
         return
 
     if args.summary:

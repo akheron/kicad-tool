@@ -101,6 +101,65 @@ def test_cli_set():
         os.unlink(path)
 
 
+def test_cli_bom_fields():
+    fd, path = tempfile.mkstemp(suffix=".kicad_sch")
+    os.close(fd)
+    shutil.copy2(HIRVI, path)
+    try:
+        # First, add a custom property to a component
+        subprocess.run(
+            [
+                sys.executable, "-m", "kicad_tool.cli",
+                "set", path,
+                "--ref", "C1",
+                "--set", "LCSC=C12345",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        # Now run bom with --fields
+        result = subprocess.run(
+            [sys.executable, "-m", "kicad_tool.cli", "bom", path, "--fields", "LCSC"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "LCSC" in result.stdout
+        assert "C12345" in result.stdout
+    finally:
+        os.unlink(path)
+
+
+def test_cli_bom_fields_all():
+    fd, path = tempfile.mkstemp(suffix=".kicad_sch")
+    os.close(fd)
+    shutil.copy2(HIRVI, path)
+    try:
+        subprocess.run(
+            [
+                sys.executable, "-m", "kicad_tool.cli",
+                "set", path,
+                "--ref", "C1",
+                "--set", "LCSC=C12345",
+                "--set", "MF=SomeVendor",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        result = subprocess.run(
+            [sys.executable, "-m", "kicad_tool.cli", "bom", path, "--fields-all"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "LCSC" in result.stdout
+        assert "C12345" in result.stdout
+        assert "MF" in result.stdout
+        assert "SomeVendor" in result.stdout
+    finally:
+        os.unlink(path)
+
+
 def test_cli_set_error_ref_not_found():
     fd, path = tempfile.mkstemp(suffix=".kicad_sch")
     os.close(fd)
